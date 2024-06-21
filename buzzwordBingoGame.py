@@ -1,3 +1,4 @@
+# Code mit name, xaxis, yaxis Eingabe
 import os
 import random
 import typer
@@ -8,7 +9,6 @@ from posix_ipc import MessageQueue, ExistentialError, O_CREAT, O_EXCL, O_RDWR
 app = typer.Typer()
 console = Console()
 
-BINGO_SIZE = (5, 5)
 BUZZWORDS = [
     "Synergie", "Blockchain", "KI", "Big Data", "Cloud", "Agil", "IoT", "5G", "KPI", "Disruptiv",
     "Scrum", "DevOps", "Microservices", "Lean", "Kanban", "Paradigma", "Pivot", "Unicorn", "Innovativ", "Ecosystem",
@@ -24,7 +24,7 @@ def create_bingo_card(xaxis: int, yaxis: int):
     return card
 
 def print_bingo_card(card, marks):
-    table = Table(show_header=False)
+    table = Table()
     for i in range(len(card[0])):
         table.add_column(str(i+1))
 
@@ -53,7 +53,11 @@ def receive_messages(mq):
             os._exit(0)
 
 @app.command()
-def start(xaxis: int = 5, yaxis: int = 5):
+def start():
+    name = input("Geben Sie Ihren Namen ein: ")
+    xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
+    yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
+
     try:
         mq = MessageQueue(message_queue_name, flags=O_CREAT | O_EXCL, mode=0o666, max_messages=10, max_message_size=msg_size)
         console.print("Spiel erstellt. Warten auf Spieler...")
@@ -78,18 +82,21 @@ def start(xaxis: int = 5, yaxis: int = 5):
         print_bingo_card(card, marks)
         if check_winner(marks):
             console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
-            mq.send(f"{os.getpid()} gewinnt!".encode())
+            mq.send(f"{name} gewinnt!".encode())
             os._exit(0)
 
 @app.command()
 def join():
+    name = input("Geben Sie Ihren Namen ein: ")
+
     try:
         mq = MessageQueue(message_queue_name, flags=O_RDWR)
     except ExistentialError:
         console.print("Kein laufendes Spiel gefunden.")
         return
 
-    xaxis, yaxis = BINGO_SIZE
+    xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
+    yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
     card = create_bingo_card(xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
     print_bingo_card(card, marks)
@@ -107,7 +114,7 @@ def join():
         print_bingo_card(card, marks)
         if check_winner(marks):
             console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
-            mq.send(f"{os.getpid()} gewinnt!".encode())
+            mq.send(f"{name} gewinnt!".encode())
             os._exit(0)
 
 if __name__ == "__main__":
