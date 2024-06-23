@@ -30,7 +30,7 @@ def print_bingo_card(card, marks):
         table.add_column(str(i+1))
 
     for y, row in enumerate(card):
-        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] or word == "FREI" else word for x, word in enumerate(row)])
+        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] else word for x, word in enumerate(row)])
     
     console.print(table)
 
@@ -80,7 +80,17 @@ def start(buzzwords_file: str):
         receive_messages(mq)
 
     while True:
+        console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'rückgängig', um die Markierung eines Feldes aufzuheben:")
         buzzword = input("Markiere ein Buzzword: ")
+        if buzzword.lower() == "rückgängig":
+            buzzword = input("Geben Sie das Buzzword ein, dessen Markierung Sie aufheben möchten: ")
+            for y, row in enumerate(card):
+                for x, word in enumerate(row):
+                    if word == buzzword:
+                        marks[y][x] = False
+            print_bingo_card(card, marks)
+            continue
+        
         for y, row in enumerate(card):
             for x, word in enumerate(row):
                 if word == buzzword:
@@ -118,7 +128,17 @@ def join(buzzwords_file: str):
         receive_messages(mq)
 
     while True:
+        console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'rückgängig', um die Markierung eines Feldes aufzuheben:")
         buzzword = input("Markiere ein Buzzword: ")
+        if buzzword.lower() == "rückgängig":
+            buzzword = input("Geben Sie das Buzzword ein, dessen Markierung Sie aufheben möchten: ")
+            for y, row in enumerate(card):
+                for x, word in enumerate(row):
+                    if word == buzzword:
+                        marks[y][x] = False
+            print_bingo_card(card, marks)
+            continue
+        
         for y, row in enumerate(card):
             for x, word in enumerate(row):
                 if word == buzzword:
