@@ -1,4 +1,3 @@
-# Code mit Einlesen der buzzwords
 import os
 import random
 import typer
@@ -20,6 +19,9 @@ def load_buzzwords(filename: str):
 def create_bingo_card(buzzwords, xaxis: int, yaxis: int):
     selected_words = random.sample(buzzwords, xaxis * yaxis)
     card = [selected_words[i:i + xaxis] for i in range(0, len(selected_words), xaxis)]
+    if xaxis == yaxis and (xaxis == 5 or xaxis == 7):
+        middle = xaxis // 2
+        card[middle][middle] = "FREI"
     return card
 
 def print_bingo_card(card, marks):
@@ -28,7 +30,7 @@ def print_bingo_card(card, marks):
         table.add_column(str(i+1))
 
     for y, row in enumerate(card):
-        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] else word for x, word in enumerate(row)])
+        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] or word == "FREI" else word for x, word in enumerate(row)])
     
     console.print(table)
 
@@ -68,6 +70,9 @@ def start(buzzwords_file: str):
     
     card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
+    if xaxis == yaxis and (xaxis == 5 or xaxis == 7):
+        middle = xaxis // 2
+        marks[middle][middle] = True
     print_bingo_card(card, marks)
 
     pid = os.fork()
@@ -103,6 +108,9 @@ def join(buzzwords_file: str):
     
     card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
+    if xaxis == yaxis and (xaxis == 5 or xaxis == 7):
+        middle = xaxis // 2
+        marks[middle][middle] = True
     print_bingo_card(card, marks)
 
     pid = os.fork()
