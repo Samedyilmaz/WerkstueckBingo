@@ -1,4 +1,4 @@
-# Code mit name, xaxis, yaxis Eingabe
+# Code mit Einlesen der buzzwords
 import os
 import random
 import typer
@@ -9,17 +9,16 @@ from posix_ipc import MessageQueue, ExistentialError, O_CREAT, O_EXCL, O_RDWR
 app = typer.Typer()
 console = Console()
 
-BUZZWORDS = [
-    "Synergie", "Blockchain", "KI", "Big Data", "Cloud", "Agil", "IoT", "5G", "KPI", "Disruptiv",
-    "Scrum", "DevOps", "Microservices", "Lean", "Kanban", "Paradigma", "Pivot", "Unicorn", "Innovativ", "Ecosystem",
-    "Skalierbar", "On-Premises", "Container", "Serverless", "Low-Code"
-]
-
 message_queue_name = "/buzzword_bingo_queue"
 msg_size = 1024
 
-def create_bingo_card(xaxis: int, yaxis: int):
-    selected_words = random.sample(BUZZWORDS, xaxis * yaxis)
+def load_buzzwords(filename: str):
+    with open(filename, 'r') as file:
+        buzzwords = [line.strip() for line in file.readlines()]
+    return buzzwords
+
+def create_bingo_card(buzzwords, xaxis: int, yaxis: int):
+    selected_words = random.sample(buzzwords, xaxis * yaxis)
     card = [selected_words[i:i + xaxis] for i in range(0, len(selected_words), xaxis)]
     return card
 
@@ -53,10 +52,12 @@ def receive_messages(mq):
             os._exit(0)
 
 @app.command()
-def start():
+def start(buzzwords_file: str):
     name = input("Geben Sie Ihren Namen ein: ")
     xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
     yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
+    
+    buzzwords = load_buzzwords(buzzwords_file)
 
     try:
         mq = MessageQueue(message_queue_name, flags=O_CREAT | O_EXCL, mode=0o666, max_messages=10, max_message_size=msg_size)
@@ -65,7 +66,7 @@ def start():
         console.print("Spiel läuft bereits. Trete dem bestehenden Spiel bei.")
         return
     
-    card = create_bingo_card(xaxis, yaxis)
+    card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
     print_bingo_card(card, marks)
 
@@ -86,7 +87,7 @@ def start():
             os._exit(0)
 
 @app.command()
-def join():
+def join(buzzwords_file: str):
     name = input("Geben Sie Ihren Namen ein: ")
 
     try:
@@ -94,10 +95,13 @@ def join():
     except ExistentialError:
         console.print("Kein laufendes Spiel gefunden.")
         return
-
+    
     xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
     yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
-    card = create_bingo_card(xaxis, yaxis)
+    
+    buzzwords = load_buzzwords(buzzwords_file)
+    
+    card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
     print_bingo_card(card, marks)
 
