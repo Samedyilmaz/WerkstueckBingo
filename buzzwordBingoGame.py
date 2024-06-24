@@ -82,6 +82,10 @@ def start(buzzwords_file: str):
         console.print("Spiel läuft bereits. Trete dem bestehenden Spiel bei.")
         return
     
+    # Send game settings to joining players
+    settings_message = f"{xaxis},{yaxis},{buzzwords_file}"
+    mq.send(settings_message.encode())
+
     card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
     if xaxis == yaxis and (xaxis == 5 or xaxis == 7):
@@ -120,7 +124,7 @@ def start(buzzwords_file: str):
     logger.info("Ende des Spiels")
 
 @app.command()
-def join(buzzwords_file: str):
+def join():
     name = input("Geben Sie Ihren Namen ein: ")
 
     try:
@@ -129,14 +133,17 @@ def join(buzzwords_file: str):
         console.print("Kein laufendes Spiel gefunden.")
         return
     
-    player_number = 2
-    logger = setup_logger(player_number)
-    
-    xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
-    yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
+    # Receive game settings from the host
+    settings_message, _ = mq.receive()
+    settings = settings_message.decode().split(',')
+    xaxis, yaxis = int(settings[0]), int(settings[1])
+    buzzwords_file = settings[2]
     
     buzzwords = load_buzzwords(buzzwords_file)
-    
+
+    player_number = 2
+    logger = setup_logger(player_number)
+
     logger.info("Start des Spiels")
     logger.info(f"Größe des Spielfelds: ({xaxis}/{yaxis})")
 
@@ -176,6 +183,6 @@ def join(buzzwords_file: str):
             mq.send(f"{name} gewinnt!".encode())
             os._exit(0)
     logger.info("Ende des Spiels")
-
+    
 if __name__ == "__main__":
     app()
