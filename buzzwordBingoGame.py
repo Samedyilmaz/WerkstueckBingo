@@ -1,6 +1,8 @@
 import os
 import random
 import typer
+import logging
+from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from posix_ipc import MessageQueue, ExistentialError, O_CREAT, O_EXCL, O_RDWR
@@ -30,7 +32,7 @@ def print_bingo_card(card, marks):
         table.add_column(str(i+1))
 
     for y, row in enumerate(card):
-        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] else word for x, word in enumerate(row)])
+        table.add_row(*[f"[green]{word}[/green]" if marks[y][x] or word == "FREI" else word for x, word in enumerate(row)])
     
     console.print(table)
 
@@ -53,13 +55,25 @@ def receive_messages(mq):
             mq.unlink()
             os._exit(0)
 
+def setup_logger(player_number):
+    now = datetime.now()
+    log_filename = now.strftime(f"%Y-%m-%d-%H-%M-%S-bingo-Spieler{player_number}.txt")
+    logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d-%H-%M-%S')
+    return logging.getLogger()
+
 @app.command()
 def start(buzzwords_file: str):
     name = input("Geben Sie Ihren Namen ein: ")
+    player_number = 1
+    logger = setup_logger(player_number)
+    
     xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
     yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
     
     buzzwords = load_buzzwords(buzzwords_file)
+
+    logger.info("Start des Spiels")
+    logger.info(f"Größe des Spielfelds: ({xaxis}/{yaxis})")
 
     try:
         mq = MessageQueue(message_queue_name, flags=O_CREAT | O_EXCL, mode=0o666, max_messages=10, max_message_size=msg_size)
@@ -88,6 +102,7 @@ def start(buzzwords_file: str):
                 for x, word in enumerate(row):
                     if word == buzzword:
                         marks[y][x] = False
+                        logger.info(f"{buzzword} demarkiert ({x+1}/{y+1})")
             print_bingo_card(card, marks)
             continue
         
@@ -95,11 +110,14 @@ def start(buzzwords_file: str):
             for x, word in enumerate(row):
                 if word == buzzword:
                     marks[y][x] = True
+                    logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
         if check_winner(marks):
+            logger.info("Sieg")
             console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
             mq.send(f"{name} gewinnt!".encode())
             os._exit(0)
+    logger.info("Ende des Spiels")
 
 @app.command()
 def join(buzzwords_file: str):
@@ -111,11 +129,17 @@ def join(buzzwords_file: str):
         console.print("Kein laufendes Spiel gefunden.")
         return
     
+    player_number = 2
+    logger = setup_logger(player_number)
+    
     xaxis = int(input("Geben Sie die Anzahl der Spalten für die Bingo-Karte ein: "))
     yaxis = int(input("Geben Sie die Anzahl der Zeilen für die Bingo-Karte ein: "))
     
     buzzwords = load_buzzwords(buzzwords_file)
     
+    logger.info("Start des Spiels")
+    logger.info(f"Größe des Spielfelds: ({xaxis}/{yaxis})")
+
     card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
     if xaxis == yaxis and (xaxis == 5 or xaxis == 7):
@@ -136,6 +160,7 @@ def join(buzzwords_file: str):
                 for x, word in enumerate(row):
                     if word == buzzword:
                         marks[y][x] = False
+                        logger.info(f"{buzzword} demarkiert ({x+1}/{y+1})")
             print_bingo_card(card, marks)
             continue
         
@@ -143,11 +168,14 @@ def join(buzzwords_file: str):
             for x, word in enumerate(row):
                 if word == buzzword:
                     marks[y][x] = True
+                    logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
         if check_winner(marks):
+            logger.info("Sieg")
             console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
             mq.send(f"{name} gewinnt!".encode())
             os._exit(0)
+    logger.info("Ende des Spiels")
 
 if __name__ == "__main__":
     app()
