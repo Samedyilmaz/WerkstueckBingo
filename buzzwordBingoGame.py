@@ -1,8 +1,10 @@
+# Importieren der erforderlichen Module
 import os
 import random
 import typer
 import logging
 from datetime import datetime
+import signal
 from rich.console import Console
 from rich.table import Table
 from posix_ipc import MessageQueue, ExistentialError, O_CREAT, O_EXCL, O_RDWR
@@ -10,9 +12,9 @@ from posix_ipc import MessageQueue, ExistentialError, O_CREAT, O_EXCL, O_RDWR
 app = typer.Typer()
 console = Console()
 
+# Initialisierung der Message Queue Namen
 settings_queue_name = "/buzzword_bingo_settings_queue"
 result_queue_name = "/buzzword_bingo_result_queue"
-msg_size = 1024
 
 # Funktion zum Einlesen der Buzzwords aus einer Datei
 def load_buzzwords(filename: str):
@@ -31,7 +33,7 @@ def create_bingo_card(buzzwords, xaxis: int, yaxis: int):
 
 # Funktion zur Anzeige der Bingo-Karte mit Rich
 def print_bingo_card(card, marks):
-    table = Table()
+    table = Table(show_header=False)
     for i in range(len(card[0])):
         table.add_column(str(i+1))
 
@@ -51,14 +53,17 @@ def check_winner(marks):
     return False
 
 # Funktion zum Empfangen einer Gewinnbenachrichtigung eines Spielers durch die result_message_queue
-def receive_messages(mq):
+def receive_messages(result_mq, parent_pid, logger):
     while True:
-        msg, _ = mq.receive()
+        msg, _ = result_mq.receive()
         message = msg.decode()
         if "gewinnt" in message:
-            console.print(f"[bold red]{message}[/bold red]")
-            mq.close()
-            mq.unlink()
+            console.print(f"[bold yellow]{message}[/bold yellow]")
+            logger.info("Niederlage")
+            logger.info("Ende des Spiels")
+            result_mq.close() # Schließen und Löschen der result_mq
+            result_mq.unlink()
+            os.kill(parent_pid, signal.SIGTERM)
             os._exit(0)
 
 # Funktion zum Setup des Loggers bzw. zum Erstellen der Logfile
@@ -71,27 +76,41 @@ def setup_logger(player_number):
 # Hauptfunktion zum Starten des Spiels und des ersten Spielerprozesses (Host)
 @app.command()
 def start(buzzwords_file: str, xaxis: int, yaxis: int):
+    
+    # Prüfen, ob die Buzzword-Datei mit dem angegebenen Namen existiert
+    try:
+        buzzwords = load_buzzwords(buzzwords_file)
+    except (FileNotFoundError):
+        console.print("[bold red]Buzzword-Datei nicht gefunden[/bold red]")
+        return
+    
+    # Überprüfen, ob die Textdatei genügend Buzzwords für die angegebene Kartengröße enthält
+    if len(buzzwords) < xaxis * yaxis:
+        console.print("[bold red]Die Textdatei enthält nicht genügend Buzzwords für die angegebene Kartengröße[/bold red]")
+        os._exit(0)
+
     name = input("Geben Sie Ihren Namen ein: ")
     player_number = 1
-    logger = setup_logger(player_number)
-    
-    buzzwords = load_buzzwords(buzzwords_file)
 
-    logger.info("Start des Spiels")
-    logger.info(f"Größe des Spielfelds: ({xaxis}/{yaxis})")
-
-# Nachrichtenwarteschlangen für Spieleinstellungen und Gewinnbenachrichtigung erstellen
+    # Nachrichtenwarteschlangen für Spieleinstellungen und Gewinnbenachrichtigung erstellen
     try:
-        settings_mq = MessageQueue(settings_queue_name, flags=O_CREAT | O_EXCL, mode=0o666, max_messages=10, max_message_size=msg_size)
-        result_mq = MessageQueue(result_queue_name, flags=O_CREAT | O_EXCL, mode=0o666, max_messages=10, max_message_size=msg_size)
+        settings_mq = MessageQueue(settings_queue_name, flags=O_CREAT | O_EXCL, mode=0o666)
+        result_mq = MessageQueue(result_queue_name, flags=O_CREAT | O_EXCL, mode=0o666)
         console.print("Spiel erstellt. Warten auf Spieler...")
+        console.print(f"Spieler: [bold yellow]{name}[/bold yellow]")
     except ExistentialError:
         console.print("Spiel läuft bereits. Trete dem bestehenden Spiel bei.")
         return
     
+    # Start des Loggers
+    logger = setup_logger(player_number)
+    logger.info("Start des Spiels")
+    logger.info(f"Größe des Spielfelds: ({xaxis}/{yaxis})")
+    
     # Sendet Spieleinstellungen zum beitretenden Spieler
     settings_message = f"{xaxis},{yaxis},{buzzwords_file}"
     settings_mq.send(settings_message.encode())
+    settings_mq.close()
 
     card = create_bingo_card(buzzwords, xaxis, yaxis)
     marks = [[False] * xaxis for _ in range(yaxis)]
@@ -100,14 +119,20 @@ def start(buzzwords_file: str, xaxis: int, yaxis: int):
         marks[middle][middle] = True
     print_bingo_card(card, marks)
 
-# Kindprozesserstellung zur Überwachung der Nachrichtenwarteschlange für die Gewinnbenachrichtigung
+    parent_pid = os.getpid()
+
+    # Kindprozesserstellung zur Überwachung der Nachrichtenwarteschlange für die Gewinnbenachrichtigung
     pid = os.fork()
     if pid == 0:
-        receive_messages(result_mq)
+        receive_messages(result_mq, parent_pid, logger)
 
+    # Elternprozess bzw. Hauptprozess führt Spiellogik aus
     while True:
         console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'r', um die Markierung eines Feldes aufzuheben:")
+        newBuzzword= random.choice(buzzwords)
+        console.print(f"Neues Buzzword: [bold blue]{newBuzzword}[/bold blue]")
         buzzword = input()
+
         if buzzword.lower() == "r":
             buzzword = input("Geben Sie das Buzzword ein, dessen Markierung Sie aufheben möchten: ")
             for y, row in enumerate(card):
@@ -124,22 +149,30 @@ def start(buzzwords_file: str, xaxis: int, yaxis: int):
                     marks[y][x] = True
                     logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
+
         if check_winner(marks):
+            os.kill(pid, signal.SIGTERM)
             logger.info("Sieg")
-            console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
-            result_mq.send(f"{name} gewinnt!".encode())    
+            console.print("[bold yellow]Bingo! Sie haben gewonnen![/bold yellow]")
+            result_mq.send(f"{name} gewinnt!".encode())
+            result_mq.close()    
             logger.info("Ende des Spiels")
             os._exit(0)
 
 # Funktion zum Beitreten des Spiels und zum Starten des zweiten Spielerprozesses
 @app.command()
 def join():
-    name = input("Geben Sie Ihren Namen ein: ")
 
-# Prüfen, ob die Nachrichtenwarteschlangen vom Host erstellt wurden bzw. ob das Spiel gestartet wurde
+    name = input("Geben Sie Ihren Namen ein: ")
+    player_number = 2
+
+    # Prüfen, ob die Nachrichtenwarteschlangen vom Host erstellt wurden bzw. ob das Spiel gestartet wurde
     try:
         settings_mq = MessageQueue(settings_queue_name, flags=O_RDWR)
         result_mq = MessageQueue(result_queue_name, flags=O_RDWR)
+        console.print("Spiel beigetreten")
+        console.print(f"Spieler: [bold yellow]{name}[/bold yellow]")
+
     except ExistentialError:
         console.print("Kein laufendes Spiel gefunden.")
         return
@@ -149,10 +182,14 @@ def join():
     settings = settings_message.decode().split(',')
     xaxis, yaxis = int(settings[0]), int(settings[1])
     buzzwords_file = settings[2]
+
+    # Schließen und Löschen der settings_mq nach Empfangen der Spieleinstellungen
+    settings_mq.close()
+    settings_mq.unlink()
     
     buzzwords = load_buzzwords(buzzwords_file)
 
-    player_number = 2
+    # Start des Loggers
     logger = setup_logger(player_number)
 
     logger.info("Start des Spiels")
@@ -165,14 +202,20 @@ def join():
         marks[middle][middle] = True
     print_bingo_card(card, marks)
 
-# Kindprozesserstellung zur Überwachung der Nachrichtenwarteschlange für die Gewinnbenachrichtigung
+    parent_pid = os.getpid()
+
+    # Kindprozesserstellung zur Überwachung der Nachrichtenwarteschlange für die Gewinnbenachrichtigung
     pid = os.fork()
     if pid == 0:
-        receive_messages(result_mq)
+        receive_messages(result_mq, parent_pid, logger)
 
+    # Elternprozess bzw. Hauptprozess führt Spiellogik aus
     while True:
         console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'r', um die Markierung eines Feldes aufzuheben:")
+        newBuzzword= random.choice(buzzwords)
+        console.print(f"Neues Buzzword: [bold blue]{newBuzzword}[/bold blue]")
         buzzword = input()
+
         if buzzword.lower() == "r":
             buzzword = input("Geben Sie das Buzzword ein, dessen Markierung Sie aufheben möchten: ")
             for y, row in enumerate(card):
@@ -189,10 +232,13 @@ def join():
                     marks[y][x] = True
                     logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
+
         if check_winner(marks):
+            os.kill(pid, signal.SIGTERM)
             logger.info("Sieg")
             console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
             result_mq.send(f"{name} gewinnt!".encode())
+            result_mq.close()
             logger.info("Ende des Spiels")
             os._exit(0)
 
