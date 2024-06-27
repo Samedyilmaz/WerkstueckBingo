@@ -127,9 +127,10 @@ def start(buzzwords_file: str, xaxis: int, yaxis: int):
         receive_messages(result_mq, parent_pid, logger)
 
     # Elternprozess bzw. Hauptprozess führt Spiellogik aus
+    newBuzzword= random.choice(buzzwords)
+
     while True:
         console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'r', um die Markierung eines Feldes aufzuheben:")
-        newBuzzword= random.choice(buzzwords)
         console.print(f"Neues Buzzword: [bold blue]{newBuzzword}[/bold blue]")
         buzzword = input()
 
@@ -149,6 +150,7 @@ def start(buzzwords_file: str, xaxis: int, yaxis: int):
                     marks[y][x] = True
                     logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
+        newBuzzword= random.choice(buzzwords)
 
         if check_winner(marks):
             os.kill(pid, signal.SIGTERM)
@@ -210,9 +212,10 @@ def join():
         receive_messages(result_mq, parent_pid, logger)
 
     # Elternprozess bzw. Hauptprozess führt Spiellogik aus
+    newBuzzword= random.choice(buzzwords)
+
     while True:
         console.print("Geben Sie ein Buzzword ein, um es zu markieren oder 'r', um die Markierung eines Feldes aufzuheben:")
-        newBuzzword= random.choice(buzzwords)
         console.print(f"Neues Buzzword: [bold blue]{newBuzzword}[/bold blue]")
         buzzword = input()
 
@@ -232,11 +235,12 @@ def join():
                     marks[y][x] = True
                     logger.info(f"{buzzword} markiert ({x+1}/{y+1})")
         print_bingo_card(card, marks)
+        newBuzzword= random.choice(buzzwords)
 
         if check_winner(marks):
             os.kill(pid, signal.SIGTERM)
             logger.info("Sieg")
-            console.print("[bold red]Bingo! Sie haben gewonnen![/bold red]")
+            console.print("[bold yellow]Bingo! Sie haben gewonnen![/bold yellow]")
             result_mq.send(f"{name} gewinnt!".encode())
             result_mq.close()
             logger.info("Ende des Spiels")
