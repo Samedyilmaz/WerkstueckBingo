@@ -75,7 +75,7 @@ def setup_logger(player_number):
 
 # Hauptfunktion zum Starten des Spiels und des ersten Spielerprozesses (Host)
 @app.command()
-def start(buzzwords_file: str, xaxis: int, yaxis: int):
+def start(buzzwords_file: str = typer.Argument(), xaxis: int = typer.Argument(), yaxis: int = typer.Argument()):
     
     # Prüfen, ob die Buzzword-Datei mit dem angegebenen Namen existiert
     try:
